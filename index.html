@@ -71,12 +71,13 @@ body {
 .watchlist::-webkit-scrollbar { width: 6px; }
 .watchlist::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
 .wl-item {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 11px 12px; margin-bottom: 4px; border-radius: 8px; cursor: pointer;
   border: 1px solid transparent; transition: all .16s ease;
 }
 .wl-item:hover { background: var(--hover); }
 .wl-item.active { background: var(--accent-soft); border-color: var(--accent); }
+.wl-info { flex: 1; min-width: 0; }
 .wl-ticker { font-weight: 700; font-size: 14px; }
 .wl-name { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
 .wl-del {
@@ -122,6 +123,22 @@ body {
 .steps code { background: var(--bg-card); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
 .steps pre { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 8px; overflow-x: auto; font-size: 12px; line-height: 1.5; }
 .steps a { color: var(--accent); }
+.modal-card-sm { max-width: 480px; }
+.field-label { display:block; font-size:12px; color:var(--text-dim); margin: 6px 0 6px; font-weight:600; }
+.key-row { display:flex; gap:8px; }
+.key-row input {
+  flex:1; background:var(--bg-card); border:1px solid var(--border); color:var(--text);
+  padding:9px 12px; border-radius:8px; font-size:13px; outline:none;
+}
+.key-row input:focus { border-color:var(--accent); }
+.key-actions { display:flex; justify-content:space-between; align-items:center; margin-top:14px; }
+#fh-status { margin-top:12px; min-height:16px; }
+/* 自選項目裡的價格小字 */
+.wl-price { font-size:13px; font-weight:700; font-variant-numeric: tabular-nums; }
+.wl-chg { font-size:11px; font-weight:600; font-variant-numeric: tabular-nums; }
+.wl-chg.up { color: var(--green); }
+.wl-chg.down { color: var(--red); }
+.wl-right { text-align:right; line-height:1.25; }
 @media (max-width: 760px) {
   .layout { flex-direction: column; }
   .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); max-height: 38vh; }
@@ -140,6 +157,7 @@ body {
       </div>
     </div>
     <div class="header-actions">
+      <button id="btn-settings" class="icon-btn" title="報價設定（Finnhub API key）">⚙️ 報價</button>
       <button id="btn-help" class="icon-btn" title="Pine 指標使用說明">❓ Pine 指標怎麼用</button>
       <button id="btn-theme" class="icon-btn" title="切換深色 / 淺色">🌙 深色</button>
     </div>
@@ -209,6 +227,26 @@ plotshape(sell, style=shape.triangledown, color=color.red,   location=location.a
     </div>
   </div>
 
+  <!-- 報價設定 Modal -->
+  <div id="settings-modal" class="modal" hidden>
+    <div class="modal-card modal-card-sm">
+      <button class="modal-close" id="btn-close-settings">✕</button>
+      <h2>即時報價設定</h2>
+      <p class="muted">自選名單旁顯示即時價格與漲跌 %。資料來源為 <a href="https://finnhub.io" target="_blank" rel="noopener">Finnhub</a> 免費版（每分鐘 60 次查詢）。API key 只存在<b>這台瀏覽器</b>的 localStorage，不會進到網站原始碼或伺服器。</p>
+      <label class="field-label">Finnhub API Key</label>
+      <div class="key-row">
+        <input id="fh-key" type="password" placeholder="貼上你的 Finnhub API key" autocomplete="off" />
+        <button id="btn-save-key" class="icon-btn">儲存</button>
+      </div>
+      <p class="muted small">還沒有 key？到 <a href="https://finnhub.io/register" target="_blank" rel="noopener">finnhub.io 註冊免費帳號</a> → 進 Dashboard → 複製 API key。</p>
+      <div class="key-actions">
+        <button id="btn-refresh-prices" class="icon-btn">↻ 立即更新報價</button>
+        <button id="btn-clear-key" class="text-btn">清除 key</button>
+      </div>
+      <p id="fh-status" class="muted small"></p>
+    </div>
+  </div>
+
   <script>
 /* =========================================================
  *  美股自選行情室 — 核心邏輯（單檔內嵌版）
@@ -238,7 +276,10 @@ const $ = (id) => document.getElementById(id);
 const $input=$('symbol-input'),$btnAdd=$('btn-add'),$list=$('watchlist'),$count=$('wl-count'),
       $btnReset=$('btn-reset'),$btnTheme=$('btn-theme'),$btnHelp=$('btn-help'),$modal=$('modal'),
       $closeMd=$('btn-close-modal'),$curSym=$('current-symbol'),$tvBox=$('tv-chart-container'),
-      $btnShare=$('btn-share'),$shareHint=$('share-hint');
+      $btnShare=$('btn-share'),$shareHint=$('share-hint'),
+      $btnSettings=$('btn-settings'),$settingsModal=$('settings-modal'),$closeSettings=$('btn-close-settings'),
+      $fhKey=$('fh-key'),$btnSaveKey=$('btn-save-key'),$btnRefreshPrices=$('btn-refresh-prices'),
+      $btnClearKey=$('btn-clear-key'),$fhStatus=$('fh-status');
 
 let watchlist = loadWatchlist();
 let currentSymbol = null;
@@ -262,13 +303,19 @@ function renderWatchlist(){
   watchlist.forEach((item)=>{
     const li=document.createElement('li');
     li.className='wl-item'+(item.symbol===currentSymbol?' active':'');
-    const info=document.createElement('div');
+    const info=document.createElement('div'); info.className='wl-info';
     const t=document.createElement('div'); t.className='wl-ticker'; t.textContent=item.symbol.split(':').pop();
     const n=document.createElement('div'); n.className='wl-name'; n.textContent=item.name||'';
     info.appendChild(t); info.appendChild(n);
+    // 報價區
+    const right=document.createElement('div'); right.className='wl-right';
+    const price=document.createElement('div'); price.className='wl-price'; price.dataset.symbol=item.symbol;
+    const chg=document.createElement('div'); chg.className='wl-chg'; chg.dataset.symbol=item.symbol;
+    right.appendChild(price); right.appendChild(chg);
+    applyPrice(item.symbol, price, chg); // 套用快取
     const del=document.createElement('button'); del.className='wl-del'; del.textContent='✕'; del.title='移除';
     del.addEventListener('click',(e)=>{ e.stopPropagation(); removeStock(item.symbol); });
-    li.appendChild(info); li.appendChild(del);
+    li.appendChild(info); li.appendChild(right); li.appendChild(del);
     li.addEventListener('click',()=>selectStock(item.symbol));
     $list.appendChild(li);
   });
@@ -278,6 +325,7 @@ function addStock(raw){
   const symbol=normalizeSymbol(raw); if(!symbol) return;
   if(watchlist.some(w=>w.symbol===symbol)){ selectStock(symbol); return; }
   watchlist.push({symbol,name:''}); saveWatchlist(); renderWatchlist(); selectStock(symbol);
+  if(getFhKey()) fetchQuotes(); // 新增即抓該檔報價
 }
 function removeStock(symbol){
   watchlist=watchlist.filter(w=>w.symbol!==symbol); saveWatchlist();
@@ -387,15 +435,95 @@ function importFromHash(){
   return true;
 }
 
+/* ===== 即時報價（Finnhub，key 存 localStorage） ===== */
+const FH_KEY='mystocks.finnhub.key';
+let priceCache = {};      // { 'NASDAQ:AAPL': {c, dp, t} }
+let priceTimer = null;
+
+function getFhKey(){ return localStorage.getItem(FH_KEY) || ''; }
+function setFhKey(k){ localStorage.setItem(FH_KEY, k); }
+function fmtPrice(c){
+  if(c==null||isNaN(c)) return '—';
+  return '$' + (c>=1000 ? c.toLocaleString('en-US',{maximumFractionDigits:2}) : Number(c).toFixed(2));
+}
+function fmtPct(dp){
+  if(dp==null||isNaN(dp)||dp===0) return '';
+  const s = dp>0 ? '+' : '';
+  return s + Number(dp).toFixed(2) + '%';
+}
+function applyPrice(symbol, priceEl, chgEl){
+  const p = priceCache[symbol];
+  if(!p){ if(priceEl) priceEl.textContent=''; if(chgEl) chgEl.textContent=''; return; }
+  if(priceEl) priceEl.textContent = fmtPrice(p.c);
+  if(chgEl){ const v=fmtPct(p.dp); chgEl.textContent=v;
+    chgEl.className='wl-chg '+(p.dp>0?'up':p.dp<0?'down':''); }
+}
+function updatePriceDOM(){
+  document.querySelectorAll('.wl-price').forEach(el=>{ const s=el.dataset.symbol; applyPrice(s, el, document.querySelector('.wl-chg[data-symbol="'+CSS.escape(s)+'"]')); });
+}
+function setFhStatus(msg){ if($fhStatus) $fhStatus.textContent = msg||''; }
+
+async function fetchQuotes(){
+  const key = getFhKey();
+  if(!key){ return; }
+  if(!watchlist.length){ return; }
+  setFhStatus('更新報價中…');
+  // Finnhub 用純 ticker（去掉交易所前綴）
+  let done=0, ok=0;
+  // 限流：免費版 60/min，用小批次 + 微延遲
+  const tickers = watchlist.map(w=>({sym:w.symbol, t:w.symbol.split(':').pop()}));
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  for(let i=0;i<tickers.length;i++){
+    const {sym,t} = tickers[i];
+    try{
+      const r = await fetch('https://finnhub.io/api/v1/quote?symbol='+encodeURIComponent(t)+'&token='+encodeURIComponent(key));
+      if(r.status===429){ setFhStatus('已達 Finnhub 免費限流（60次/分），稍後再試。'); break; }
+      if(r.status===401||r.status===403){ setFhStatus('API key 無效或被拒，請檢查 key。'); break; }
+      const d = await r.json();
+      if(d && d.c!=null && d.c>0){
+        priceCache[sym] = { c:d.c, dp:(d.dp!=null?d.dp:0), t:Date.now() };
+        ok++;
+      }
+    }catch(e){ /* 網路錯誤，略過單檔 */ }
+    done++;
+    if(i%5===4) await sleep(1200); // 每 5 檔暫停一下，避免突發限流
+    await sleep(80);
+  }
+  updatePriceDOM();
+  setFhStatus('已更新 '+ok+'/'+watchlist.length+' 檔報價。下次自動更新 '+(PRICE_INTERVAL/1000)+' 秒後。');
+}
+const PRICE_INTERVAL = 60000;
+function startPolling(){
+  if(priceTimer) clearInterval(priceTimer);
+  priceTimer = setInterval(fetchQuotes, PRICE_INTERVAL);
+}
+
 $btnAdd.addEventListener('click',()=>{ addStock($input.value); $input.value=''; $input.focus(); });
 $input.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ addStock($input.value); $input.value=''; } });
-$btnReset.addEventListener('click',()=>{ if(confirm('回復為預設名單？目前自選將被覆蓋。')){ watchlist=[...DEFAULT_WATCHLIST]; saveWatchlist(); renderWatchlist(); } });
+$btnReset.addEventListener('click',()=>{ if(confirm('回復為預設名單？目前自選將被覆蓋。')){ watchlist=[...DEFAULT_WATCHLIST]; saveWatchlist(); renderWatchlist(); if(getFhKey()) fetchQuotes(); } });
 $btnTheme.addEventListener('click',toggleTheme);
 $btnHelp.addEventListener('click',openModal);
 $btnShare.addEventListener('click',shareLink);
 $closeMd.addEventListener('click',closeModal);
 $modal.addEventListener('click',(e)=>{ if(e.target===$modal) closeModal(); });
-document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') closeModal(); });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ closeModal(); closeSettingsModal(); } });
+
+/* 報價設定面板 */
+function openSettings(){ $fhKey.value=getFhKey(); $settingsModal.hidden=false; }
+function closeSettingsModal(){ $settingsModal.hidden=true; }
+$btnSettings.addEventListener('click',openSettings);
+$closeSettings.addEventListener('click',closeSettingsModal);
+$settingsModal.addEventListener('click',(e)=>{ if(e.target===$settingsModal) closeSettingsModal(); });
+$btnSaveKey.addEventListener('click',()=>{
+  const k=$fhKey.value.trim(); setFhKey(k);
+  setFhStatus(k?('已儲存 key，開始抓報價。'):('已清空 key。'));
+  if(k){ fetchQuotes().then(startPolling); } else { if(priceTimer){clearInterval(priceTimer);priceTimer=null;} priceCache={}; updatePriceDOM(); }
+});
+$btnRefreshPrices.addEventListener('click',()=>{ fetchQuotes(); });
+$btnClearKey.addEventListener('click',()=>{
+  $fhKey.value=''; setFhKey(''); if(priceTimer){clearInterval(priceTimer);priceTimer=null;}
+  priceCache={}; updatePriceDOM(); setFhStatus('已清除 key，不再顯示報價。');
+});
 
 (function init(){
   applyTheme();
@@ -405,6 +533,8 @@ document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') closeModal(); })
   }
   renderWatchlist();
   if(watchlist.length) selectStock(watchlist[0].symbol);
+  // 有 key 就自動抓報價 + 啟動輪詢
+  if(getFhKey()){ fetchQuotes(); startPolling(); }
 })();
   </script>
 </body>
