@@ -86,6 +86,10 @@ body {
 .wl-item:hover .wl-del { opacity: .7; }
 .wl-del:hover { opacity: 1; background: rgba(239,83,80,.15); }
 .sidebar-footer { padding-top: 12px; border-top: 1px solid var(--border); }
+.footer-row { display: flex; gap: 6px; }
+.footer-row .text-btn { flex: 1; }
+.share-btn { color: var(--accent); font-weight: 600; }
+#share-hint { margin: 8px 0 0; }
 .text-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 12px; padding: 6px 4px; }
 .text-btn:hover { color: var(--accent); }
 .chart-area { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
@@ -157,7 +161,11 @@ body {
       <ul id="watchlist" class="watchlist"></ul>
 
       <div class="sidebar-footer">
-        <button id="btn-reset" class="text-btn">↺ 回復預設名單</button>
+        <div class="footer-row">
+          <button id="btn-share" class="text-btn share-btn">🔗 分享名單</button>
+          <button id="btn-reset" class="text-btn">↺ 回復預設</button>
+        </div>
+        <p class="hint" id="share-hint" hidden>已複製連結！在其他裝置的瀏覽器貼上這條網址開啟，即可匯入這份名單。</p>
       </div>
     </aside>
 
@@ -229,7 +237,8 @@ const NYSE_KNOWN = ['BRK.B','JPM','JNJ','KO','PG','XOM','CVX','BAC','WFC','PFE',
 const $ = (id) => document.getElementById(id);
 const $input=$('symbol-input'),$btnAdd=$('btn-add'),$list=$('watchlist'),$count=$('wl-count'),
       $btnReset=$('btn-reset'),$btnTheme=$('btn-theme'),$btnHelp=$('btn-help'),$modal=$('modal'),
-      $closeMd=$('btn-close-modal'),$curSym=$('current-symbol'),$tvBox=$('tv-chart-container');
+      $closeMd=$('btn-close-modal'),$curSym=$('current-symbol'),$tvBox=$('tv-chart-container'),
+      $btnShare=$('btn-share'),$shareHint=$('share-hint');
 
 let watchlist = loadWatchlist();
 let currentSymbol = null;
@@ -321,17 +330,80 @@ function toggleTheme(){ currentTheme = currentTheme==='dark'?'light':'dark'; app
 function openModal(){ $modal.hidden=false; }
 function closeModal(){ $modal.hidden=true; }
 
+/* ===== 分享連結：把自選名單打包進 URL hash，跨裝置匯入 ===== */
+function encodeWatchlist(list){
+  try{
+    const json = JSON.stringify(list);
+    // UTF-8 安全的 base64
+    const b64 = btoa(unescape(encodeURIComponent(json)));
+    return b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); // base64url
+  }catch(e){ return ''; }
+}
+function decodeWatchlist(str){
+  try{
+    let b64 = str.replace(/-/g,'+').replace(/_/g,'/');
+    while(b64.length % 4) b64 += '=';
+    const json = decodeURIComponent(escape(atob(b64)));
+    const arr = JSON.parse(json);
+    if(Array.isArray(arr)) return arr.filter(x=>x&&x.symbol);
+  }catch(e){}
+  return null;
+}
+function shareLink(){
+  if(!watchlist.length){ alert('自選名單是空的，無法分享。'); return; }
+  const data = encodeWatchlist(watchlist);
+  const url = location.origin + location.pathname + '#w=' + data;
+  // 複製到剪貼簿
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(
+      ()=>showShareHint(url),
+      ()=>fallbackCopy(url)
+    );
+  } else { fallbackCopy(url); }
+}
+function fallbackCopy(url){
+  // 舊瀏覽器退路：用隱藏 textarea + execCommand
+  const ta=document.createElement('textarea');
+  ta.value=url; ta.style.position='fixed'; ta.style.top='-9999px';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); showShareHint(url); }
+  catch(e){ showShareHint(url); /*沒複製到也顯示網址讓人手動複製*/ }
+  document.body.removeChild(ta);
+}
+function showShareHint(url){
+  $shareHint.hidden=false;
+  $shareHint.textContent = '已複製連結！貼到其他裝置瀏覽器網址列即可匯入。' + (url?'\n'+url:'');
+  setTimeout(()=>{ $shareHint.hidden=true; }, 8000);
+}
+function importFromHash(){
+  const m = location.hash.match(/[#&]w=([^&]+)/);
+  if(!m) return false;
+  const list = decodeWatchlist(m[1]);
+  if(!list || !list.length) return false;
+  watchlist = list;
+  saveWatchlist();
+  // 清掉 hash，避免重新整理又覆蓋
+  history.replaceState(null,'',location.origin+location.pathname);
+  return true;
+}
+
 $btnAdd.addEventListener('click',()=>{ addStock($input.value); $input.value=''; $input.focus(); });
 $input.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ addStock($input.value); $input.value=''; } });
 $btnReset.addEventListener('click',()=>{ if(confirm('回復為預設名單？目前自選將被覆蓋。')){ watchlist=[...DEFAULT_WATCHLIST]; saveWatchlist(); renderWatchlist(); } });
 $btnTheme.addEventListener('click',toggleTheme);
 $btnHelp.addEventListener('click',openModal);
+$btnShare.addEventListener('click',shareLink);
 $closeMd.addEventListener('click',closeModal);
 $modal.addEventListener('click',(e)=>{ if(e.target===$modal) closeModal(); });
 document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') closeModal(); });
 
 (function init(){
-  applyTheme(); renderWatchlist();
+  applyTheme();
+  const imported = importFromHash();
+  if(imported){
+    alert('已從分享連結匯入 ' + watchlist.length + ' 檔股票。');
+  }
+  renderWatchlist();
   if(watchlist.length) selectStock(watchlist[0].symbol);
 })();
   </script>
