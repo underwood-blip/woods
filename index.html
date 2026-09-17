@@ -133,6 +133,21 @@ body {
 .key-row input:focus { border-color:var(--accent); }
 .key-actions { display:flex; justify-content:space-between; align-items:center; margin-top:14px; }
 #fh-status { margin-top:12px; min-height:16px; }
+/* 指標設定 textarea */
+#ind-input {
+  width:100%; background:var(--bg-card); border:1px solid var(--border); color:var(--text);
+  padding:9px 12px; border-radius:8px; font-size:13px; outline:none; resize:vertical;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; line-height:1.5;
+  box-sizing:border-box;
+}
+#ind-input:focus { border-color:var(--accent); }
+#ind-status { margin-top:12px; min-height:16px; }
+.ind-help { margin-top:16px; }
+.ind-help summary { cursor:pointer; font-size:12px; color:var(--text-dim); font-weight:600; }
+.ind-help-body { margin-top:10px; font-size:13px; line-height:1.6; color:var(--text); }
+.ind-help-body p { margin:8px 0; }
+.ind-help-body ol { margin:8px 0 8px 20px; }
+.ind-help-body li { margin:4px 0; }
 /* 自選項目裡的價格小字 */
 .wl-price { font-size:13px; font-weight:700; font-variant-numeric: tabular-nums; }
 .wl-chg { font-size:11px; font-weight:600; font-variant-numeric: tabular-nums; }
@@ -157,6 +172,7 @@ body {
       </div>
     </div>
     <div class="header-actions">
+      <button id="btn-indicators" class="icon-btn" title="我的 Pine 指標（自動載入）">📐 指標</button>
       <button id="btn-settings" class="icon-btn" title="報價設定（Finnhub API key）">⚙️ 報價</button>
       <button id="btn-help" class="icon-btn" title="Pine 指標使用說明">❓ Pine 指標怎麼用</button>
       <button id="btn-theme" class="icon-btn" title="切換深色 / 淺色">🌙 深色</button>
@@ -219,11 +235,12 @@ sell = ta.crossunder(fast, slow)
 plotshape(buy,  style=shape.triangleup,   color=color.green, location=location.belowbar, size=size.small)
 plotshape(sell, style=shape.triangledown, color=color.red,   location=location.abovebar, size=size.small)</code></pre>
         </li>
-        <li><b>發佈指標（可設私密）</b><br>在 Pine Editor 按 <b>Publish</b>，標題打清楚。可在「Visibility」設為 <i>Private</i>，只有你自己看得到。</li>
-        <li><b>在下方圖表加入</b><br>關閉此視窗後，點圖表工具列的 <b>fx（指標）鈕</b> → 搜尋你剛發佈的指標標題 → 點擊加入。買賣訊號就會出現在圖上。</li>
-        <li><b>讓網站預設自動帶入你的指標</b><br>到下方程式碼裡的 <code>defaultStudies</code> 陣列，加入你的指標腳本 ID（在 TradingView 指標頁 URL 中可找到，形如 <code>STD;My%20Buy%2FSell%20Signal</code>）。存檔重整即預設載入。</li>
+        <li><b>發佈指標 — 必須設為「公開」</b><br>在 Pine Editor 按 <b>Publish</b>，標題打清楚。<b>可見性（Visibility）必須選 Public</b>。<br><b>為什麼不能設私密？</b>這個網站的圖表是 TradingView 的嵌入 widget，屬於<b>匿名的跨來源 iframe</b>（沒有你的登入態）。私密／不公開發佈的指標只有你的帳號能讀取，widget 查不到、也搜不到——所以買賣訊號不會出現。要讓網站自動載入你的指標，<b>只能公開發佈</b>。不想被搜到？標題取個不顯眼的名字即可。</li>
+        <li><b>在下方圖表加入（兩種方式）</b><br>
+          <b>方式 A — 自動帶入：</b>點右上角 <b>「📐 指標」</b>鈕，把指標標題填進去 → 儲存，圖表自動載入，每次開圖都帶著。<br>
+          <b>方式 B — 手動加：</b>點圖表工具列的 <b>fx（指標）鈕</b> → 搜尋你發佈的指標標題 → 點擊加入。買賣訊號就會出現在圖上。</li>
       </ol>
-      <p class="muted small">註：若要完全在站內寫／回測 Pine 並接自己的資料源，需改用 TradingView Charting Library（需向 TradingView 申請免費非商業授權 + 自架資料後端）。對個人小站通常沒必要。</p>
+      <p class="muted small">註：studies 參數用的是「指標標題」（Pine 裡 <code>indicator("...")</code> 那串字），不是腳本頁 URL 裡的 script ID。若要完全在站內寫／回測 Pine 並接自己的資料源，需改用 TradingView Charting Library（需向 TradingView 申請免費非商業授權 + 自架資料後端）。對個人小站通常沒必要。</p>
     </div>
   </div>
 
@@ -247,12 +264,43 @@ plotshape(sell, style=shape.triangledown, color=color.red,   location=location.a
     </div>
   </div>
 
+  <div id="indicators-modal" class="modal" hidden>
+    <div class="modal-card modal-card-sm">
+      <button class="modal-close" id="btn-close-indicators">✕</button>
+      <h2>我的 Pine 指標</h2>
+      <p class="muted">把你在 TradingView <b>公開發佈</b>的 Pine 指標標題填在這裡，圖表會自動載入並顯示買賣訊號。設定存在這台瀏覽器，不進公開原始碼。</p>
+      <label class="field-label">指標標題（每行一個）</label>
+      <textarea id="ind-input" rows="5" placeholder="例如：&#10;My Buy/Sell Signal&#10;EMA Cross Strategy" autocomplete="off"></textarea>
+      <p class="muted small">格式：直接填指標標題（Pine 裡 <code>indicator("標題")</code> 的那個標題）。<code>/</code> 不需特別處理，程式會自動跨碼。</p>
+      <div class="key-actions">
+        <button id="btn-save-indicators" class="icon-btn">儲存並重載圖表</button>
+        <button id="btn-clear-indicators" class="text-btn">清除自訂指標</button>
+      </div>
+      <p id="ind-status" class="muted small"></p>
+      <details class="ind-help">
+        <summary>為什麼私密指標載入不了？怎麼改公開？</summary>
+        <div class="ind-help-body">
+          <p><b>根本原因：</b>這個圖表是 TradingView 的嵌入 widget，屬於<b>匿名的跨來源 iframe</b>（從 tradingview-widget.com 載入，沒有你的登入態）。私密／不公開發佈的指標只有你的帳號能讀取，widget 查不到、也搜不到——所以你怎麼找都找不到能用的 ID，這不是你的問題。</p>
+          <p><b>解法：</b>把指標改成「<b>公開（Public）</b>」發佈。</p>
+          <ol>
+            <li>TradingView → Pine Editor → 開啟你的指標腳本</li>
+            <li>按 <b>Publish → Save</b>，在發佈對話框的<b>可見性選 Public</b>（若已發佈為私密，到腳本頁面右上角 ⋯ → Edit source → 改 Visibility 為 Public）</li>
+            <li>不想被別人搜到？指標標題取個不顯眼的名字（如隨機字串），公開發佈後理論上可被搜尋，但沒人會去搜那名字</li>
+            <li>回到這站，把指標標題填進上面的框 → 儲存 → 買賣訊號自動出現在圖上</li>
+          </ol>
+          <p class="muted small">註：studies 參數用的是「指標標題」不是腳本頁 URL 裡的 script ID。標題就是 <code>indicator("...")</code> 那串字。</p>
+        </div>
+      </details>
+    </div>
+  </div>
+
   <script>
 /* =========================================================
  *  美股自選行情室 — 核心邏輯（單檔內嵌版）
  * ========================================================= */
 const STORAGE_KEY = 'mystocks.watchlist.v1';
 const THEME_KEY = 'mystocks.theme.v1';
+const INDICATORS_KEY = 'mystocks.indicators.v1';
 
 const DEFAULT_WATCHLIST = [
   { symbol: 'NASDAQ:AAPL',  name: 'Apple' },
@@ -266,8 +314,7 @@ const DEFAULT_WATCHLIST = [
 ];
 
 /* 預設載入的 TradingView 內建指標。
-   要預載你自己發佈的 Pine 指標，把腳本 ID 加進這陣列即可，
-   例如：'STD;My Buy%2FSell Signal'。詳情見右上角❓說明。 */
+   你公開發佈的 Pine 指標不用改這裡——點右上角「📐 指標」鈕填入標題即可，設定存在瀏覽器。 */
 const defaultStudies = [ 'STD;EMA', 'STD;MACD', 'STD;RSI' ];
 
 const NYSE_KNOWN = ['BRK.B','JPM','JNJ','KO','PG','XOM','CVX','BAC','WFC','PFE','VZ','DIS','NKE','MCD','CSCO','MRK','GS','MS','MET','USB','CAT','BA','GE','V','UNH','HD','INTC','WMT'];
@@ -279,7 +326,10 @@ const $input=$('symbol-input'),$btnAdd=$('btn-add'),$list=$('watchlist'),$count=
       $btnShare=$('btn-share'),$shareHint=$('share-hint'),
       $btnSettings=$('btn-settings'),$settingsModal=$('settings-modal'),$closeSettings=$('btn-close-settings'),
       $fhKey=$('fh-key'),$btnSaveKey=$('btn-save-key'),$btnRefreshPrices=$('btn-refresh-prices'),
-      $btnClearKey=$('btn-clear-key'),$fhStatus=$('fh-status');
+      $btnClearKey=$('btn-clear-key'),$fhStatus=$('fh-status'),
+      $btnInd=$('btn-indicators'),$indModal=$('indicators-modal'),$closeInd=$('btn-close-indicators'),
+      $indInput=$('ind-input'),$btnSaveInd=$('btn-save-indicators'),$btnClearInd=$('btn-clear-indicators'),
+      $indStatus=$('ind-status');
 
 let watchlist = loadWatchlist();
 let currentSymbol = null;
@@ -357,7 +407,7 @@ function loadChart(){
     autosize:true, symbol:currentSymbol, interval:'D', timezone:'Etc/UTC',
     theme:currentTheme, style:'1', locale:'zh_TW', enable_publishing:false,
     hide_side_toolbar:false, allow_symbol_change:true, details:true, hotlist:true,
-    calendar:true, studies:defaultStudies, support_host:'on'
+    calendar:true, studies:getStudyList(), support_host:'on'
   });
   container.appendChild(s);
   $tvBox.appendChild(container);
@@ -442,6 +492,23 @@ let priceTimer = null;
 
 function getFhKey(){ return localStorage.getItem(FH_KEY) || ''; }
 function setFhKey(k){ localStorage.setItem(FH_KEY, k); }
+
+/* === 自訂 Pine 指標（公開發佈的）=== */
+function loadIndicatorsRaw(){ return localStorage.getItem(INDICATORS_KEY) || ''; }
+function saveIndicatorsRaw(s){ localStorage.setItem(INDICATORS_KEY, s); }
+/* 把使用者填的標題清單解析成 studies 參數用的陣列。
+   每行一個標題，加 STD; 前綴，/ 跨碼成 %2F（TradingView widget 規範）。 */
+function parseIndicators(raw){
+  if(!raw) return [];
+  return raw.split('\n').map(s=>s.trim()).filter(Boolean).map(t=>{
+    const enc = t.replace(/\//g,'%2F');
+    return 'STD;' + enc;
+  });
+}
+/* 合併內建指標 + 自訂指標，供 loadChart 的 studies 用 */
+function getStudyList(){
+  return [...defaultStudies, ...parseIndicators(loadIndicatorsRaw())];
+}
 function fmtPrice(c){
   if(c==null||isNaN(c)) return '—';
   return '$' + (c>=1000 ? c.toLocaleString('en-US',{maximumFractionDigits:2}) : Number(c).toFixed(2));
@@ -506,7 +573,7 @@ $btnHelp.addEventListener('click',openModal);
 $btnShare.addEventListener('click',shareLink);
 $closeMd.addEventListener('click',closeModal);
 $modal.addEventListener('click',(e)=>{ if(e.target===$modal) closeModal(); });
-document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ closeModal(); closeSettingsModal(); } });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape'){ closeModal(); closeSettingsModal(); closeIndicators(); } });
 
 /* 報價設定面板 */
 function openSettings(){ $fhKey.value=getFhKey(); $settingsModal.hidden=false; }
@@ -523,6 +590,36 @@ $btnRefreshPrices.addEventListener('click',()=>{ fetchQuotes(); });
 $btnClearKey.addEventListener('click',()=>{
   $fhKey.value=''; setFhKey(''); if(priceTimer){clearInterval(priceTimer);priceTimer=null;}
   priceCache={}; updatePriceDOM(); setFhStatus('已清除 key，不再顯示報價。');
+});
+
+/* 指標設定面板 */
+function openIndicators(){
+  $indInput.value = loadIndicatorsRaw();
+  setIndStatus('');
+  $indModal.hidden=false;
+}
+function closeIndicators(){ $indModal.hidden=true; }
+function setIndStatus(msg){ $indStatus.textContent = msg; }
+$btnInd.addEventListener('click',openIndicators);
+$closeInd.addEventListener('click',closeIndicators);
+$indModal.addEventListener('click',(e)=>{ if(e.target===$indModal) closeIndicators(); });
+$btnSaveInd.addEventListener('click',()=>{
+  const raw = $indInput.value;
+  saveIndicatorsRaw(raw);
+  const list = parseIndicators(raw);
+  if(list.length){
+    setIndStatus('已儲存 '+list.length+' 個自訂指標，正在重載圖表…');
+  } else {
+    setIndStatus('已清空自訂指標（保留內建 EMA/MACD/RSI），正在重載圖表…');
+  }
+  // 重新載入圖表以套用新指標
+  if(currentSymbol){ loadChart(); }
+  setTimeout(closeIndicators, 900);
+});
+$btnClearInd.addEventListener('click',()=>{
+  $indInput.value=''; saveIndicatorsRaw('');
+  setIndStatus('已清除自訂指標，正在重載圖表…');
+  if(currentSymbol){ loadChart(); }
 });
 
 (function init(){
