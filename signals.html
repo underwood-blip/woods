@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>美股自選 · UT Bot 訊號 · Lightweight Charts</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+:root{
+  --bg:#0d1117; --bg-soft:#161b22; --bg-elev:#1c2128; --border:#30363d;
+  --text:#c9d1d9; --text-dim:#8b949e; --accent:#4d8dff;
+  --up:#26c281; --down:#ef5350; --lime:#9ccc65; --orange:#ffb74d;
+  --sidebar-w:300px; --radius:8px;
+}
+[data-theme="light"]{
+  --bg:#ffffff; --bg-soft:#f6f8fa; --bg-elev:#eaeef2; --border:#d0d7de;
+  --text:#1f2328; --text-dim:#656d76; --accent:#0969da;
+  --up:#1a7f37; --down:#cf222e; --lime:#4d7c0f; --orange:#bf6f00;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+button{font:inherit;cursor:pointer;color:var(--text);background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);padding:6px 12px;transition:opacity .15s,background .15s}
+button:hover{opacity:.85}
+input,select{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;outline:none}
+input:focus{border-color:var(--accent)}
+.app{display:flex;height:100vh;width:100%;overflow:hidden}
+
+/* sidebar */
+.sidebar{width:var(--sidebar-w);min-width:var(--sidebar-w);background:var(--bg-soft);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.sb-head{padding:12px;border-bottom:1px solid var(--border)}
+.sb-head h1{font-size:15px;margin:0 0 8px;font-weight:600}
+.sb-add{display:flex;gap:6px}
+.sb-add input{flex:1;min-width:0}
+.sb-actions{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border)}
+.sb-actions button{flex:1;padding:6px 4px;font-size:12px}
+.sb-list{flex:1;overflow-y:auto;padding:6px}
+.stock-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+.stock-item:hover{background:var(--bg-elev)}
+.stock-item.active{background:var(--bg-elev);border-color:var(--accent)}
+.stock-item .sym{font-weight:600;font-size:13px}
+.stock-item .nm{color:var(--text-dim);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stock-info{flex:1;min-width:0}
+.stock-px{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stock-px .p{font-size:13px;font-weight:600}
+.stock-px .c{font-size:11px}
+.stock-px .c.up{color:var(--up)}
+.stock-px .c.down{color:var(--down)}
+.stock-del{opacity:0;flex:0 0 auto;color:var(--text-dim);background:none;border:none;padding:2px 4px}
+.stock-item:hover .stock-del{opacity:1}
+.stock-del:hover{color:var(--down)}
+.sb-foot{padding:8px 12px;border-top:1px solid var(--border);font-size:11px;color:var(--text-dim)}
+
+/* main */
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.topbar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg-soft);flex-wrap:wrap}
+.topbar .title{font-weight:600;font-size:15px;margin-right:auto}
+.topbar .title .sub{color:var(--text-dim);font-weight:400;font-size:12px;margin-left:6px}
+.chart-wrap{flex:1;position:relative;min-height:0}
+#chart{position:absolute;inset:0}
+.chart-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);text-align:center;padding:40px}
+.chart-info{display:flex;gap:16px;align-items:center;font-size:12px;color:var(--text-dim);margin-right:auto}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:99px;border:1px solid var(--border);background:var(--bg-elev);font-size:11px}
+.chip b{color:var(--text)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50}
+.overlay.show{display:flex}
+.modal{background:var(--bg-soft);border:1px solid var(--border);border-radius:12px;width:min(440px,92vw);max-height:88vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.modal h3{margin:0;padding:14px 18px;border-bottom:1px solid var(--border);font-size:15px}
+.modal .body{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:12px;color:var(--text-dim)}
+.field .hint{font-size:11px;color:var(--text-dim)}
+.field .row{display:flex;gap:8px;align-items:center}
+.modal .foot{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.pillrow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+.badge.up{background:rgba(38,194,129,.15);color:var(--up)}
+.badge.down{background:rgba(239,83,80,.15);color:var(--down)}
+.badge.flat{background:rgba(139,148,158,.15);color:var(--text-dim)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg-elev);border:1px solid var(--border);color:var(--text);padding:8px 16px;border-radius:8px;font-size:13px;z-index:60;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:1}
+.loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--text-dim);font-size:13px;z-index:5}
+@media(max-width:720px){
+  .app{flex-direction:column}
+  .sidebar{width:100%;min-width:0;max-height:42vh;border-right:none;border-bottom:1px solid var(--border)}
+  .chart-wrap{min-height:300px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sb-head">
+      <h1>美股自選 · UT Bot 訊號</h1>
+      <div class="sb-add">
+        <input id="symInput" placeholder="輸入代碼 AAPL" list="symList">
+        <datalist id="symList"></datalist>
+        <button id="addBtn">加入</button>
+      </div>
+    </div>
+    <div class="sb-actions">
+      <button id="shareBtn" title="複製分享連結">🔗 分享</button>
+      <button id="resetBtn" title="還原預設清單">↺ 重置</button>
+      <button id="themeBtn" title="切換深淺色">🌙</button>
+    </div>
+    <div class="sb-list" id="watchList"></div>
+    <div class="sb-foot"><span id="dataMode">資料來源：待取得</span></div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <div class="chart-info" id="chartInfo"><span class="title">尚未選股</span></div>
+      <button id="stratBtn">⚙️ 策略</button>
+      <button id="quoteBtn">⚙️ 報價</button>
+    </div>
+    <div class="chart-wrap">
+      <div id="chart"></div>
+      <div class="chart-empty" id="chartEmpty">從左側選擇一支股票<br>載入日 K 線與 UT Bot 買賣訊號</div>
+      <div class="loading" id="chartLoading" style="display:none">載入中…</div>
+    </div>
+  </main>
+</div>
+
+<!-- 報價設定 modal -->
+<div class="overlay" id="quoteModal">
+  <div class="modal">
+    <h3>⚙️ 報價設定</h3>
+    <div class="body">
+      <div class="field">
+        <label>Finnhub API Key</label>
+        <input id="fhKey" type="text" placeholder="貼上你的 Finnhub key (免費註冊)">
+        <div class="hint">無 key 時使用模擬資料(mock),仍可看到訊號示意。<br>免費申請:<a href="https://finnhub.io/register" target="_blank">finnhub.io/register</a></div>
+      </div>
+      <div class="field">
+        <label>報價更新頻率</label>
+        <select id="quoteInt">
+          <option value="0">不自動更新</option>
+          <option value="15">15 秒</option>
+          <option value="30">30 秒</option>
+          <option value="60">60 秒</option>
+        </select>
+      </div>
+    </div>
+    <div class="foot"><button onclick="closeModal('quoteModal')">取消</button><button onclick="saveQuote()">儲存</button></div>
+  </div>
+</div>
+
+<!-- 策略參數 modal -->
+<div class="overlay" id="stratModal">
+  <div class="modal">
+    <h3>⚙️ UT Bot 策略參數</h3>
+    <div class="body">
+      <div class="pillrow">
+        <div class="field"><label>Key Value (a)</label><input id="pA" type="number" step="0.1" value="1.0"></div>
+        <div class="field"><label>ATR Period (c)</label><input id="pC" type="number" min="1" value="10"></div>
+      </div>
+      <div class="pillrow">
+        <div class="field"><label>Fast Length</label><input id="pFast" type="number" min="1" value="12"></div>
+        <div class="field"><label>Slow Length</label><input id="pSlow" type="number" min="1" value="26"></div>
+      </div>
+      <div class="field"><label>Signal Length</label><input id="pSig" type="number" min="1" value="9"></div>
+      <div class="hint" style="color:var(--text-dim);font-size:11px">修改後將以新參數重算指標並重畫圖。</div>
+    </div>
+    <div class="foot"><button onclick="closeModal('stratModal')">取消</button><button onclick="saveStrat()">套用</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+ *  美股自選 · UT Bot 訊號 · Lightweight Charts 版
+ *  純前端單檔,零後端。買賣訊號由 Pine (UT Bot) 轉寫為 JS。
+ * ============================================================ */
+(function(){
+'use strict';
+
+/* ---------- 常量與儲存鍵 ---------- */
+var STORAGE_KEY  = 'mystocks.watchlist.v1';
+var FH_KEY       = 'mystocks.finnhub.key';
+var FH_INT_KEY   = 'mystocks.finnhub.interval';
+var THEME_KEY    = 'mystocks.theme.v1';
+var STRAT_KEY    = 'mystocks.strat.v1';
+
+var DEFAULT_WATCHLIST = [
+  {symbol:'NASDAQ:AAPL',  name:'Apple'},
+  {symbol:'NASDAQ:MSFT',  name:'Microsoft'},
+  {symbol:'NASDAQ:GOOGL', name:'Alphabet'},
+  {symbol:'NASDAQ:AMZN',  name:'Amazon'},
+  {symbol:'NASDAQ:TSLA',  name:'Tesla'},
+  {symbol:'NASDAQ:META',  name:'Meta'},
+  {symbol:'NASDAQ:NVDA',  name:'NVIDIA'},
+  {symbol:'NYSE:JPM',     name:'JPMorgan'}
+];
+/* NYSE 常見股(其餘預設歸 NASDAQ) */
+var NYSE_SET = ['JPM','V','JNJ','WMT','PG','KO','DIS','BAC','XOM','CVX','PFE','MRK','HD','MA','UNH','VZ','ABT','NKE','T','PYPL','INTC','KOPE'];
+
+/* 顏色(供指標計算使用,依主題動態取值) */
+function colors(){
+  var cs = getComputedStyle(document.documentElement);
+  return {
+    green:  cs.getPropertyValue('--up').trim(),
+    red:   cs.getPropertyValue('--down').trim(),
+    lime:  cs.getPropertyValue('--lime').trim(),
+    orange:cs.getPropertyValue('--orange').trim()
+  };
+}
+
+/* ---------- 通用小工具 ---------- */
+function $(id){return document.getElementById(id);}
+function toast(msg){var t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},1800);}
+function stripPrefix(sym){return String(sym||'').split(':').pop();}
+function normalizeSymbol(input){
+  var s=(input||'').trim().toUpperCase();
+  if(!s) return '';
+  if(s.indexOf(':')>0) return s;
+  if(NYSE_SET.indexOf(s)>=0) return 'NYSE:'+s;
+  return 'NASDAQ:'+s;
+}
+/* base64url 編瀏覽器(用文字處理避開 btoa unicode 問題) */
+function b64urlEnc(str){
+  return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function b64urlDec(str){
+  str=str.replace(/-/g,'+').replace(/_/g,'/');
+  while(str.length%4) str+='=';
+  return decodeURIComponent(escape(atob(str)));
+}
+
+/* ---------- 自選名單 ---------- */
+function loadWatchlist(){
+  try{
+    var raw=localStorage.getItem(STORAGE_KEY);
+    if(raw){var a=JSON.parse(raw);if(Array.isArray(a)&&a.length) return a;}
+  }catch(e){}
+  return DEFAULT_WATCHLIST.slice();
+}
+function saveWatchlist(list){localStorage.setItem(STORAGE_KEY,JSON.stringify(list));}
+
+/* ---------- 分享連結 ---------- */
+function encodeWatchlist(list){
+  return b64urlEnc(JSON.stringify(list.map(function(x){return [x.symbol,x.name];})));
+}
+function decodeWatchlist(hash){
+  try{
+    var arr=JSON.parse(b64urlDec(hash));
+    if(!Array.isArray(arr)) return null;
+    return arr.map(function(p){return {symbol:String(p[0]),name:String(p[1])};}).filter(function(x){return x.symbol;});
+  }catch(e){return null;}
+}
+function importFromHash(){
+  var m=location.hash.match(/[#&]w=([^&]+)/);
+  if(!m) return false;
+  var list=decodeWatchlist(m[1]);
+  if(list&&list.length){saveWatchlist(list);return true;}
+  return false;
+}
+function shareLink(){
+  var link=location.origin+location.pathname+'#w='+encodeWatchlist(state.list);
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(link).then(function(){toast('分享連結已複製');},function(){toast('已產生連結,請手動複製');prompt('複製分享連結:',link);});
+  }else{prompt('複製分享連結:',link);}
+}
+
+/* ---------- 主題 ---------- */
+function loadTheme(){return localStorage.getItem(THEME_KEY)||'dark';}
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme',t);
+  $('themeBtn').textContent = t==='dark'?'🌙':'☀️';
+  localStorage.setItem(THEME_KEY,t);
+  if(chart) updateChartTheme();
+  // 若已有資料,重畫以更新蠟燭/stop 顏色
+  if(state.currentSymbol && lastCandles) drawSymbol(lastCandles, state.currentSymbol);
+}
+function toggleTheme(){applyTheme(loadTheme()==='dark'?'light':'dark');}
+
+/* ---------- 策略參數 ---------- */
+function defaultStrat(){return {a:1.0,c:10,fastLength:12,slowLength:26,signalLength:9};}
+function loadStrat(){
+  try{var r=JSON.parse(localStorage.getItem(STRAT_KEY));if(r&&typeof r.a!=='undefined') return r;}catch(e){}
+  return defaultStrat();
+}
+function saveStratStore(p){localStorage.setItem(STRAT_KEY,JSON.stringify(p));}
+
+/* ---------- 報價設定 ---------- */
+function loadQuote(){return {key:localStorage.getItem(FH_KEY)||'',interval:parseInt(localStorage.getItem(FH_INT_KEY)||'30',10)};}
+function saveQuoteStore(key,intv){localStorage.setItem(FH_KEY,key);localStorage.setItem(FH_INT_KEY,String(intv));}
+
+/* ============================================================
+ *  UT Bot 指標計算 (Pine → JS)
+ * ============================================================ */
+function ema(src,length){
+  var m=2/(length+1), out=new Array(src.length);
+  for(var i=0;i<src.length;i++){ out[i] = i===0 ? src[i] : src[i]*m + out[i-1]*(1-m); }
+  return out;
+}
+/* Wilder's ATR:種子=前 period 根 TR 之 SMA,之後遞迴 */
+function wilderATR(candles,period){
+  var n=candles.length, tr=new Array(n), atr=new Array(n);
+  for(var i=0;i<n;i++){
+    if(i===0){ tr[i]=candles[i].high-candles[i].low; }
+    else{
+      var pc=candles[i-1].close;
+      tr[i]=Math.max(candles[i].high-candles[i].low, Math.abs(candles[i].high-pc), Math.abs(candles[i].low-pc));
+    }
+  }
+  var sum=0;
+  for(var j=0;j<n;j++){
+    sum+=tr[j];
+    if(j<period){ atr[j]=sum/(j+1); }              /* 暖機:擴展 SMA,避免 NaN */
+    else{ atr[j]=(atr[j-1]*(period-1)+tr[j])/period; }
+  }
+  return atr;
+}
+/*
+ * calcUTBot:回傳 {stop,pos,buys,sells,barColors,hist}
+ * 逐根迭代,prev 值在 i=0 時用 0;src[1] 在 i=0 視為 na(比較為 false → 走 else)。
+ */
+function calcUTBot(candles,params){
+  var a=Number(params.a), c=Math.max(1,Number(params.c));
+  var fastLen=Number(params.fastLength), slowLen=Number(params.slowLength), sigLen=Number(params.signalLength);
+  var n=candles.length;
+  var close=candles.map(function(k){return k.close;});
+  var atr=wilderATR(candles,c);
+  var stop=new Array(n), pos=new Array(n);
+  var prevStop=0, prevPos=0, prevSrc=NaN;
+  var buys=[], sells=[];
+  for(var i=0;i<n;i++){
+    var src_i=close[i];
+    var nLoss=a*atr[i];
+    var curStop;
+    // nz(prevStop,0) = prevStop (初值 0,之後為實數)
+    if(src_i>prevStop && prevSrc>prevStop && !isNaN(prevSrc)){
+      curStop=Math.max(prevStop, src_i-nLoss);
+    }else if(src_i<prevStop && prevSrc<prevStop && !isNaN(prevSrc)){
+      curStop=Math.min(prevStop, src_i+nLoss);
+    }else if(src_i>prevStop){
+      curStop=src_i-nLoss;
+    }else{
+      curStop=src_i+nLoss;
+    }
+    stop[i]=curStop;
+    // pos
+    var curPos;
+    if(!isNaN(prevSrc) && prevSrc<prevStop && src_i>prevStop){ curPos=1; }
+    else if(!isNaN(prevSrc) && prevSrc>prevStop && src_i<prevStop){ curPos=-1; }
+    else{ curPos=prevPos; }
+    pos[i]=curPos;
+    // buy/sell = crossover / crossunder(src, stop)
+    if(i>0){
+      var prevStop_i=stop[i-1], prevSrc_i=close[i-1];
+      if(prevSrc_i<=prevStop_i && src_i>curStop){
+        buys.push({time:candles[i].time, price:src_i});
+      }
+      if(prevSrc_i>=prevStop_i && src_i<curStop){
+        sells.push({time:candles[i].time, price:src_i});
+      }
+    }
+    prevStop=curStop; prevPos=curPos; prevSrc=src_i;
+  }
+  // MACD
+  var fastMA=ema(close,fastLen), slowMA=ema(close,slowLen);
+  var macd=close.map(function(_,i){return fastMA[i]-slowMA[i];});
+  var signal=ema(macd,sigLen);
+  var hist=macd.map(function(_,i){return macd[i]-signal[i];});
+  var col=colors();
+  var barColors=new Array(n);
+  for(var k=0;k<n;k++){
+    if(pos[k]===1){ barColors[k]=hist[k]>0?col.green:col.lime; }
+    else{ barColors[k]=hist[k]<0?col.red:col.orange; }
+  }
+  return {stop:stop,pos:pos,buys:buys,sells:sells,barColors:barColors,hist:hist,macd:macd,signal:signal};
+}
+
+/* ============================================================
+ *  資料:真實(Finnub candle) / Mock fallback
+ * ============================================================ */
+function fetchCandles(ticker){
+  var q=loadQuote();
+  if(!q.key) return Promise.resolve({s:'no_data',reason:'no_key'});
+  var to=Math.floor(Date.now()/1000);
+  var from=to-365*86400;
+  var url='https://finnhub.io/api/v1/stock/candle?symbol='+encodeURIComponent(ticker)+'&resolution=D&from='+from+'&to='+to+'&token='+encodeURIComponent(q.key);
+  return fetch(url).then(function(r){return r.json();}).catch(function(){return {s:'no_data',reason:'network'};});
+}
+function toCandles(d){
+  if(!d||d.s!=='ok'||!d.c||!d.c.length) return null;
+  var out=[];
+  for(var i=0;i<d.c.length;i++){
+    out.push({time:d.t[i], open:d.o[i], high:d.h[i], low:d.l[i], close:d.c[i]});
+  }
+  out.sort(function(a,b){return a.time-b.time;});
+  // 去重複 time(保留最後一根)
+  var uniq=[];
+  for(var j=0;j<out.length;j++){
+    if(uniq.length && uniq[uniq.length-1].time===out[j].time){ uniq[uniq.length-1]=out[j]; }
+    else uniq.push(out[j]);
+  }
+  return uniq;
+}
+/* 可重現的偽隨機 mock(以 symbol 字串為種子) */
+function generateMockCandles(symbol,count){
+  count=count||120;
+  var seed=0;
+  for(var i=0;i<symbol.length;i++){ seed=(seed*31+symbol.charCodeAt(i))>>>0; }
+  function rng(){ seed=(seed*1664525+1013904223)>>>0; return seed/0xffffffff; }
+  var price=80+rng()*220;
+  var day=Math.floor(Date.now()/86400000);
+  var out=[];
+  // 製造一段趨勢+回檔,讓訊號更自然
+  var trend=1;
+  for(var k=0;k<count;k++){
+    if(k%22===0) trend=(rng()-0.5)*2;        // 切換趨勢
+    var t=(day-(count-1)+k)*86400;
+    var open=price;
+    var vol=(rng()-0.48+trend*0.04)*price*0.03;
+    var close=Math.max(2, open+vol);
+    var hi=Math.max(open,close)*(1+rng()*0.012);
+    var lo=Math.min(open,close)*(1-rng()*0.012);
+    out.push({time:t,open:open,high:hi,low:lo,close:close});
+    price=close;
+  }
+  return out;
+}
+
+/* ============================================================
+ *  報價(quote)左側即時價
+ * ============================================================ */
+function fetchQuotes(){
+  var q=loadQuote();
+  if(!q.key){ renderQuotes(null); return; }
+  var promises=state.list.map(function(it){
+    var t=stripPrefix(it.symbol);
+    return fetch('https://finnhub.io/api/v1/quote?symbol='+encodeURIComponent(t)+'&token='+encodeURIComponent(q.key))
+      .then(function(r){return r.json();}).then(function(d){return {symbol:it.symbol,d:d};})
+      .catch(function(){return {symbol:it.symbol,d:{}};});
+  });
+  Promise.all(promises).then(renderQuotes);
+}
+function renderQuotes(rows){
+  state.quotes={};
+  if(rows) rows.forEach(function(r){ state.quotes[r.symbol]=r.d; });
+  // 更新左側 DOM
+  Array.prototype.forEach.call(document.querySelectorAll('.stock-item'),function(el){
+    var sym=el.getAttribute('data-sym');
+    var px=el.querySelector('.stock-px');
+    var d=state.quotes[sym];
+    if(d && typeof d.c==='number' && d.c>0){
+      var chg=d.d||0, pct=d.dp||0;
+      var cls=chg>0?'up':(chg<0?'down':'');
+      px.innerHTML='<div class="p">'+d.c.toFixed(2)+'</div><div class="c '+cls+'">'+(pct>=0?'+':'')+pct.toFixed(2)+'%</div>';
+    }else{
+      px.innerHTML='<div class="p" style="color:var(--text-dim)">—</div><div class="c"></div>';
+    }
+  });
+}
+
+/* ============================================================
+ *  Lightweight Charts 圖表
+ * ============================================================ */
+function ensureChart(){
+  if(chart) return chart;
+  var dark=loadTheme()==='dark';
+  chart=LightweightCharts.createChart($('chart'),{
+    layout:{ background:{color:dark?'#0d1117':'#ffffff'}, textColor:dark?'#c9d1d9':'#1f2328' },
+    grid:{ vertLines:{color:dark?'rgba(42,47,61,0.4)':'rgba(0,0,0,0.06)'}, horzLines:{color:dark?'rgba(42,47,61,0.4)':'rgba(0,0,0,0.06)'} },
+    timeScale:{ timeVisible:true, secondsVisible:false },
+    crosshair:{ mode:1 },
+    rightPriceScale:{ borderColor:dark?'#30363d':'#d0d7de' },
+    autoSize:true
+  });
+  return chart;
+}
+function updateChartTheme(){
+  var dark=loadTheme()==='dark';
+  chart.applyOptions({
+    layout:{ background:{color:dark?'#0d1117':'#ffffff'}, textColor:dark?'#c9d1d9':'#1f2328' },
+    grid:{ vertLines:{color:dark?'rgba(42,47,61,0.4)':'rgba(0,0,0,0.06)'}, horzLines:{color:dark?'rgba(42,47,61,0.4)':'rgba(0,0,0,0.06)'} },
+    rightPriceScale:{ borderColor:dark?'#30363d':'#d0d7de' }
+  });
+}
+/* 真正繪製:以已備妥的 candles 畫圖 */
+function drawSymbol(candles, symbol){
+  if(!candles||!candles.length) return;
+  lastCandles=candles;
+  var chart=ensureChart();
+  // 清除舊 series
+  if(candleSeries){ chart.removeSeries(candleSeries); candleSeries=null; }
+  if(stopSeries){ chart.removeSeries(stopSeries); stopSeries=null; }
+  var col=colors();
+  var res=calcUTBot(candles, state.strat);
+  var candleData=candles.map(function(k,i){return {time:k.time,open:k.open,high:k.high,low:k.low,close:k.close,color:res.barColors[i]};});
+  var stopData=candles.map(function(k,i){return {time:k.time,value:res.stop[i],color:res.pos[i]===1?col.green:col.red};});
+  var markers=[];
+  res.buys.forEach(function(b){markers.push({time:b.time,position:'belowBar',color:col.green,shape:'arrowUp',text:'BUY'});});
+  res.sells.forEach(function(s){markers.push({time:s.time,position:'aboveBar',color:col.red,shape:'arrowDown',text:'SELL'});});
+  markers.sort(function(a,b){return a.time-b.time;});
+  candleSeries=chart.addCandlestickSeries({upColor:col.green,downColor:col.red,borderVisible:false,wickUpColor:col.green,wickDownColor:col.red});
+  candleSeries.setData(candleData);
+  if(markers.length) candleSeries.setMarkers(markers);
+  stopSeries=chart.addLineSeries({lineWidth:2,lineVisible:true});
+  stopSeries.setData(stopData);
+  chart.timeScale().fitContent();
+  // 資訊列
+  updateInfoBar(candles,res,symbol);
+}
+function updateInfoBar(candles,res,symbol){
+  var item=state.list.filter(function(x){return x.symbol===symbol;})[0];
+  var name=item?item.name:stripPrefix(symbol);
+  var last=candles[candles.length-1];
+  var pos=res.pos[res.pos.length-1];
+  var lastBuy=res.buys.length?res.buys[res.buys.length-1]:null;
+  var lastSell=res.sells.length?res.sells[res.sells.length-1]:null;
+  var lastSig=lastBuy&&(!lastSell||lastBuy.time>lastSell.time)?'BUY':(lastSell?'SELL':'—');
+  var posTxt = pos===1?'做多':(pos===-1?'做空':'觀望');
+  var posCls = pos===1?'up':(pos===-1?'down':'flat');
+  var col=colors();
+  $('chartInfo').innerHTML =
+    '<span class="title">'+stripPrefix(symbol)+'<span class="sub">'+name+'</span></span>'+
+    '<span class="chip">最後 <b>'+last.close.toFixed(2)+'</b></span>'+
+    '<span class="chip">持倉 <span class="badge '+posCls+'">'+posTxt+'</span></span>'+
+    '<span class="chip">最近訊號 <b style="color:'+(lastSig==='BUY'?col.green:lastSig==='SELL'?col.red:'')+'">'+lastSig+'</b></span>';
+}
+
+/* 載入某股:先取資料(真實/mock),再畫 */
+function loadSymbol(symbol){
+  state.currentSymbol=symbol;
+  Array.prototype.forEach.call(document.querySelectorAll('.stock-item'),function(el){
+    el.classList.toggle('active', el.getAttribute('data-sym')===symbol);
+  });
+  $('chartEmpty').style.display='none';
+  $('chartLoading').style.display='block';
+  var ticker=stripPrefix(symbol);
+  fetchCandles(ticker).then(function(d){
+    var candles=toCandles(d);
+    var mode;
+    if(candles){ mode='Finnhub 真實日 K'; }
+    else{ candles=generateMockCandles(ticker); mode='模擬資料(mock)'; }
+    $('dataMode').textContent='資料來源:'+mode;
+    $('chartLoading').style.display='none';
+    drawSymbol(candles, symbol);
+  });
+}
+
+/* ============================================================
+ *  左側名單 UI
+ * ============================================================ */
+function renderWatchlist(){
+  var list=state.list;
+  var dl=$('symList');
+  dl.innerHTML=DEFAULT_WATCHLIST.concat(list).filter(function(v,i,a){ // 去重
+    return a.findIndex(function(x){return x.symbol===v.symbol;})===i;
+  }).map(function(x){return '<option value="'+stripPrefix(x.symbol)+'">'+x.name+'</option>';}).join('');
+  var html=list.map(function(it){
+    return '<div class="stock-item" data-sym="'+it.symbol+'" onclick="window.selectStock(\''+it.symbol+'\')">'+
+      '<div class="stock-info"><div class="sym">'+stripPrefix(it.symbol)+'</div><div class="nm">'+(it.name||'')+'</div></div>'+
+      '<div class="stock-px"><div class="p" style="color:var(--text-dim)">—</div><div class="c"></div></div>'+
+      '<button class="stock-del" title="移除" onclick="event.stopPropagation();window.removeStock(\''+it.symbol+'\')">✕</button>'+
+    '</div>';
+  }).join('');
+  $('watchList').innerHTML=html||'<div style="padding:12px;color:var(--text-dim);font-size:12px">名單為空</div>';
+}
+window.selectStock=function(sym){ loadSymbol(sym); };
+window.removeStock=function(sym){
+  state.list=state.list.filter(function(x){return x.symbol!==sym;});
+  saveWatchlist(state.list);
+  renderWatchlist();
+  if(state.currentSymbol===sym){ state.currentSymbol=null; $('chartInfo').innerHTML='<span class="title">尚未選股</span>'; if(candleSeries){chart.removeSeries(candleSeries);candleSeries=null;} if(stopSeries){chart.removeSeries(stopSeries);stopSeries=null;} $('chartEmpty').style.display='flex'; }
+  fetchQuotes();
+};
+function addStock(){
+  var raw=$('symInput').value.trim();
+  if(!raw){toast('請輸入股票代碼');return;}
+  var sym=normalizeSymbol(raw);
+  if(!sym){toast('代碼格式錯誤');return;}
+  if(state.list.some(function(x){return x.symbol===sym;})){toast('已存在於名單');return;}
+  state.list.push({symbol:sym,name:stripPrefix(sym)});
+  saveWatchlist(state.list);
+  $('symInput').value='';
+  renderWatchlist();
+  fetchQuotes();
+  loadSymbol(sym);
+}
+
+/* ============================================================
+ *  Modal 控制
+ * ============================================================ */
+window.closeModal=function(id){$(id).classList.remove('show');};
+window.saveQuote=function(){
+  var key=$('fhKey').value.trim();
+  var intv=parseInt($('quoteInt').value,10)||0;
+  saveQuoteStore(key,intv);
+  closeModal('quoteModal');
+  toast('報價設定已儲存');
+  setupQuoteTimer();
+  fetchQuotes();
+  if(state.currentSymbol) loadSymbol(state.currentSymbol);
+};
+window.saveStrat=function(){
+  var p={a:parseFloat($('pA').value),c:parseInt($('pC').value,10),fastLength:parseInt($('pFast').value,10),slowLength:parseInt($('pSlow').value,10),signalLength:parseInt($('pSig').value,10)};
+  if(!isFinite(p.a)||!isFinite(p.c)||!isFinite(p.fastLength)||!isFinite(p.slowLength)||!isFinite(p.signalLength)){toast('參數無效');return;}
+  state.strat=p; saveStratStore(p); closeModal('stratModal');
+  toast('策略參數已套用');
+  if(lastCandles) drawSymbol(lastCandles, state.currentSymbol);
+};
+
+/* ---------- 報價計時 ---------- */
+var quoteTimer=null;
+function setupQuoteTimer(){
+  if(quoteTimer){clearInterval(quoteTimer);quoteTimer=null;}
+  var intv=parseInt(localStorage.getItem(FH_INT_KEY)||'30',10);
+  if(intv>0) quoteTimer=setInterval(fetchQuotes, intv*1000);
+}
+
+/* ============================================================
+ *  初始化
+ * ============================================================ */
+var state={list:loadWatchlist(), currentSymbol:null, strat:loadStrat(), quotes:{}};
+/* 模組層級變數(避免與 id="chart" 自動產生的 chart 全域元素衝突) */
+var chart=null, candleSeries=null, stopSeries=null, lastCandles=null;
+
+function init(){
+  // 由分享連結匯入
+  if(importFromHash()){ state.list=loadWatchlist(); }
+  applyTheme(loadTheme());
+  renderWatchlist();
+  // 填入 modal 預設值
+  var q=loadQuote();
+  $('fhKey').value=q.key;
+  $('quoteInt').value=String(q.interval);
+  $('pA').value=state.strat.a; $('pC').value=state.strat.c;
+  $('pFast').value=state.strat.fastLength; $('pSlow').value=state.strat.slowLength; $('pSig').value=state.strat.signalLength;
+  // 事件
+  $('addBtn').onclick=addStock;
+  $('symInput').addEventListener('keydown',function(e){if(e.key==='Enter')addStock();});
+  $('shareBtn').onclick=shareLink;
+  $('resetBtn').onclick=function(){if(confirm('還原為預設清單?')){state.list=DEFAULT_WATCHLIST.slice();saveWatchlist(state.list);renderWatchlist();fetchQuotes();toast('已重置');}};
+  $('themeBtn').onclick=toggleTheme;
+  $('quoteBtn').onclick=function(){$('quoteModal').classList.add('show');};
+  $('stratBtn').onclick=function(){$('stratModal').classList.add('show');};
+  // 點遮罩關閉
+  Array.prototype.forEach.call(document.querySelectorAll('.overlay'),function(o){o.addEventListener('click',function(e){if(e.target===o)o.classList.remove('show');});});
+  // 報價
+  setupQuoteTimer(); fetchQuotes();
+  // 預設載入第一支
+  if(state.list.length) loadSymbol(state.list[0].symbol);
+  // hash 變動
+  window.addEventListener('hashchange',function(){ if(importFromHash()){state.list=loadWatchlist();renderWatchlist();fetchQuotes();} });
+}
+
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
+})();
+</script>
+</body>
+</html>
